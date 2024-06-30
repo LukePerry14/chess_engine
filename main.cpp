@@ -29,6 +29,8 @@ array<int, 4> positionToIndices(const string& move) {
 }
 
 bool validMove(const string& move, char (&board)[8][8], bool white, bool& unwon) {
+
+    string checkMessage = "";
     // check for correct syntax
     if (move.length() != 4) {
         cout << "invalid move syntax" << endl;
@@ -57,6 +59,8 @@ bool validMove(const string& move, char (&board)[8][8], bool white, bool& unwon)
         return false;
     }
 
+    bool check = false;
+
     // Handle validation for piece type
     switch (piece) {
         case 'P': // White pawn
@@ -64,11 +68,19 @@ bool validMove(const string& move, char (&board)[8][8], bool white, bool& unwon)
                 cout << "Invalid move for white pawn" << endl;
                 return false;
             }
+            if (checkCheck(board, posIndices, piece)) {
+                check = true;
+                checkMessage = "Pawn checks black king";
+            }
             break;
         case 'p': // Black pawn
             if (not validateBlackPawnMove(board, posIndices)) {
                 cout << "Invalid move for black pawn" << endl;
                 return false;
+            }
+            if (checkCheck(board, posIndices, piece)) {
+                check = true;
+                checkMessage = "Pawn checks white king";
             }
             break;
             
@@ -78,12 +90,21 @@ bool validMove(const string& move, char (&board)[8][8], bool white, bool& unwon)
                 cout << "Invalid move for rook" << endl;
                 return false;
             }
+            if (checkCheck(board, posIndices, piece)) {
+                check = true;
+                checkMessage = "Rook checks king";
+            }
             break;
+
         case 'N':
         case 'n':
             if (not validateKnightMove(board, posIndices)) {
                 cout << "Invalid move for knight" << endl;
                 return false;
+            }
+            if (checkCheck(board, posIndices, piece)) {
+                check = true;
+                checkMessage = "Knight checks king";
             }
             break;
         case 'B':
@@ -92,6 +113,10 @@ bool validMove(const string& move, char (&board)[8][8], bool white, bool& unwon)
                 cout << "Invalid move for bishop" << endl;
                 return false;
             }
+            if (checkCheck(board, posIndices, piece)) {
+                check = true;
+                checkMessage = "Bishop checks king";
+            }
             break;
         case 'Q':
         case 'q':
@@ -99,6 +124,11 @@ bool validMove(const string& move, char (&board)[8][8], bool white, bool& unwon)
                 cout << "Invalid move for queen" << endl;
                 return false;
             }
+            if (checkCheck(board, posIndices, piece)) {
+                check = true;
+                checkMessage = "Queen checks king";
+            }
+
             break;
         case 'K':
         case 'k':
@@ -112,30 +142,47 @@ bool validMove(const string& move, char (&board)[8][8], bool white, bool& unwon)
             return false;
     }
 
-    // Check win condition
-    if (tolower(board[posIndices[2]][posIndices[3]]) == 'k') {
-        unwon = false;
-    }
-
     // Swap pieces
     board[posIndices[2]][posIndices[3]] = board[posIndices[0]][posIndices[1]];
     board[posIndices[0]][posIndices[1]] = '.';
 
+    // Check win condition
+    if (check) {
+
+        if (checkMate(board, findOpposingKing(board, white))) {
+            cout << "Checkmate" << endl;
+            unwon = false;
+        } else {
+            cout << checkMessage << endl;
+        }
+    }
 
     return true;
 }
 
 int main() {
+    // char board[8][8] = {
+    //     {'r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'},
+    //     {'p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'},
+    //     {'.', '.', '.', '.', '.', '.', '.', '.'},
+    //     {'.', '.', '.', '.', '.', '.', '.', '.'},
+    //     {'.', '.', '.', '.', '.', '.', '.', '.'},
+    //     {'.', '.', '.', '.', '.', '.', '.', '.'},
+    //     {'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'},
+    //     {'R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'}
+    // };
+
     char board[8][8] = {
-        {'r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'},
-        {'p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'},
+        {'.', '.', '.', '.', '.', '.', '.', '.'},
+        {'.', '.', '.', '.', 'k', '.', '.', '.'},
+        {'.', '.', 'Q', '.', '.', '.', '.', '.'},
+        {'.', '.', '.', '.', '.', '.', '.', '.'},
+        {'.', '.', '.', '.', '.', '.', 'Q', '.'},
         {'.', '.', '.', '.', '.', '.', '.', '.'},
         {'.', '.', '.', '.', '.', '.', '.', '.'},
-        {'.', '.', '.', '.', '.', '.', '.', '.'},
-        {'.', '.', '.', '.', '.', '.', '.', '.'},
-        {'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'},
-        {'R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'}
+        {'.', '.', '.', '.', '.', '.', '.', '.'}
     };
+    
     bool unwon = true;
     string move;
     bool white = true;
