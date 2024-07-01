@@ -1,6 +1,8 @@
 #include <iostream>
 #include <array>
+#include <vector>
 #include <utility>
+#include <variant>
 #include "boardSnapshot.h"
 #include "moveValidationFunctions.h"
 
@@ -30,21 +32,22 @@ array<int, 4> positionToIndices(const string& move) {
 
 bool validMove(const string& move, char (&board)[8][8], bool white, bool& unwon) {
 
+    vector<array<int, 2>> attackVector;
     string checkMessage = "";
-    // check for correct syntax
+
+    // Check for correct syntax
     if (move.length() != 4) {
-        cout << "invalid move syntax" << endl;
+        cout << "Invalid move syntax" << endl;
         return false;
     }
-    for (int x=0; x < 4; x++) {
+    for (int x = 0; x < 4; x++) {
         if (x % 2 == 0) {
-            if (not ((96 < move[x]) and (move[x] < 105))) {
-                cout << "invalid move snytax" << endl;
+            if (!(96 < move[x] && move[x] < 105)) {
+                cout << "Invalid move syntax" << endl;
                 return false;
             }
-        }
-        else if (not ((48 < move[x]) and (move[x] < 57))) {
-            cout << "invalid move syntax" << endl;
+        } else if (!(48 < move[x] && move[x] < 57)) {
+            cout << "Invalid move syntax" << endl;
             return false;
         }
     }
@@ -54,7 +57,7 @@ bool validMove(const string& move, char (&board)[8][8], bool white, bool& unwon)
     char piece = board[posIndices[0]][posIndices[1]];
 
     // Check correct colour piece is being moved
-    if (not (white ? isupper(piece) : islower(piece))) {
+    if (!(white ? isupper(piece) : islower(piece))) {
         cout << "Wrong colour piece chosen" << endl;
         return false;
     }
@@ -64,75 +67,78 @@ bool validMove(const string& move, char (&board)[8][8], bool white, bool& unwon)
     // Handle validation for piece type
     switch (piece) {
         case 'P': // White pawn
-            if (not validateWhitePawnMove(board, posIndices)) {
+            if (!validateWhitePawnMove(board, posIndices)) {
                 cout << "Invalid move for white pawn" << endl;
                 return false;
             }
-            if (checkCheck(board, posIndices, piece)) {
+            attackVector = checkCheck(board, posIndices, piece);
+            if (!attackVector.empty()) {
                 check = true;
                 checkMessage = "Pawn checks black king";
             }
             break;
         case 'p': // Black pawn
-            if (not validateBlackPawnMove(board, posIndices)) {
+            if (!validateBlackPawnMove(board, posIndices)) {
                 cout << "Invalid move for black pawn" << endl;
                 return false;
             }
-            if (checkCheck(board, posIndices, piece)) {
+            attackVector = checkCheck(board, posIndices, piece);
+            if (!attackVector.empty()) {
                 check = true;
                 checkMessage = "Pawn checks white king";
             }
             break;
-            
         case 'R':
         case 'r':
-            if (not validateRookMove(board, posIndices)) {
+            if (!validateRookMove(board, posIndices)) {
                 cout << "Invalid move for rook" << endl;
                 return false;
             }
-            if (checkCheck(board, posIndices, piece)) {
+            attackVector = checkCheck(board, posIndices, piece);
+            if (!attackVector.empty()) {
                 check = true;
                 checkMessage = "Rook checks king";
             }
             break;
-
         case 'N':
         case 'n':
-            if (not validateKnightMove(board, posIndices)) {
+            if (!validateKnightMove(board, posIndices)) {
                 cout << "Invalid move for knight" << endl;
                 return false;
             }
-            if (checkCheck(board, posIndices, piece)) {
+            attackVector = checkCheck(board, posIndices, piece);
+            if (!attackVector.empty()) {
                 check = true;
                 checkMessage = "Knight checks king";
             }
             break;
         case 'B':
         case 'b':
-            if (not validateBishopMove(board, posIndices)) {
+            if (!validateBishopMove(board, posIndices)) {
                 cout << "Invalid move for bishop" << endl;
                 return false;
             }
-            if (checkCheck(board, posIndices, piece)) {
+            attackVector = checkCheck(board, posIndices, piece);
+            if (!attackVector.empty()) {
                 check = true;
                 checkMessage = "Bishop checks king";
             }
             break;
         case 'Q':
         case 'q':
-            if (not validateQueenMove(board, posIndices)) {
+            if (!validateQueenMove(board, posIndices)) {
                 cout << "Invalid move for queen" << endl;
                 return false;
             }
-            if (checkCheck(board, posIndices, piece)) {
+            attackVector = checkCheck(board, posIndices, piece);
+            if (!attackVector.empty()) {
                 check = true;
                 checkMessage = "Queen checks king";
             }
-
             break;
         case 'K':
         case 'k':
-            if (not validateKingMove(board, posIndices)) {
+            if (!validateKingMove(board, posIndices)) {
                 cout << "Invalid move for king" << endl;
                 return false;
             }
@@ -148,8 +154,7 @@ bool validMove(const string& move, char (&board)[8][8], bool white, bool& unwon)
 
     // Check win condition
     if (check) {
-
-        if (checkMate(board, findOpposingKing(board, white))) {
+        if (checkMate(board, attackVector, findOpposingKing(board, white))) {
             cout << "Checkmate" << endl;
             unwon = false;
         } else {
@@ -173,11 +178,11 @@ int main() {
     // };
 
     char board[8][8] = {
-        {'.', '.', '.', '.', '.', '.', '.', '.'},
         {'.', '.', '.', '.', 'k', '.', '.', '.'},
+        {'.', '.', '.', '.', '.', '.', 'Q', '.'},
+        {'.', '.', '.', '.', '.', '.', '.', '.'},
         {'.', '.', 'Q', '.', '.', '.', '.', '.'},
         {'.', '.', '.', '.', '.', '.', '.', '.'},
-        {'.', '.', '.', '.', '.', '.', 'Q', '.'},
         {'.', '.', '.', '.', '.', '.', '.', '.'},
         {'.', '.', '.', '.', '.', '.', '.', '.'},
         {'.', '.', '.', '.', '.', '.', '.', '.'}
@@ -193,7 +198,7 @@ int main() {
             cout << "Enter your move: ";
             cin >> move;
         } while (!validMove(move, board, white, unwon)); // Validates move and updates board if valid
-        white = not white;
+        white = !white;
     }
 
     cout << "Game Over" << endl;

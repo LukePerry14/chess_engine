@@ -1,4 +1,5 @@
 #include <array>
+#include <vector>
 using namespace std;
 
 #ifndef MOVEVALIDATIONFUNCTIONS_H
@@ -20,9 +21,9 @@ bool validateKingMove(char (&board)[8][8], const array<int, 4>& posIndices);
 
 bool notOnFriendly(char (&board)[8][8], const array<int, 4>& posIndices);
 
-bool checkCheck(char (&board)[8][8], const array<int, 4>& posIndices, const char& piece);
+vector<array<int,2>> checkCheck(char (&board)[8][8], const array<int, 4>& posIndices, const char& piece);
 
-bool checkMate(char (&board)[8][8], const array<int, 2> kingCoords);
+bool checkMate(char (&board)[8][8], const vector<array<int,2>> attackVector, const array<int, 2> kingCoords);
 
 array<int, 2> findOpposingKing(char (&board)[8][8], bool white);
 

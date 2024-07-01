@@ -2,9 +2,82 @@
 #include <vector>
 #include <cctype>
 #include <iostream>
+#include <variant>
 
 
 using namespace std;
+
+bool isBlockable(char (&board)[8][8], array<int, 2> location, char enemyKing) {
+    int row = location[0];
+    int col = location[1];
+    // Directions for knight moves
+    int knightMoves[8][2] = {
+        {2, 1}, {2, -1}, {-2, 1}, {-2, -1},
+        {1, 2}, {1, -2}, {-1, 2}, {-1, -2}
+    };
+
+    // Check for knight threats
+    for (auto &move : knightMoves) {
+        int newRow = row + move[0];
+        int newCol = col + move[1];
+        if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+            if (board[newRow][newCol] == (islower(enemyKing) ? 'n' : 'N')) {
+                return true;
+            }
+        }
+    }
+
+    // Check for pawn threats
+    if (islower(enemyKing)) { // White king, check for black pawns
+        if ((row - 1 >= 0 && col - 1 >= 0 && board[row - 1][col - 1] == 'p') ||
+            (row - 1 >= 0 && col + 1 < 8 && board[row - 1][col + 1] == 'p')) {
+            return true;
+        }
+    } else { // Black king, check for white pawns
+        if ((row + 1 < 8 && col - 1 >= 0 && board[row + 1][col - 1] == 'P') ||
+            (row + 1 < 8 && col + 1 < 8 && board[row + 1][col + 1] == 'P')) {
+            return true;
+        }
+    }
+
+
+    // Check for rook/queen threats along rows and columns
+    for (int i = 1; i < 8; ++i) {
+        if (row + i < 8 && (board[row + i][col] == (islower(enemyKing) ? 'r' : 'R') || board[row + i][col] == (islower(enemyKing) ? 'q' : 'Q'))) return true;
+        if (row - i >= 0 && (board[row - i][col] == (islower(enemyKing) ? 'r' : 'R') || board[row - i][col] == (islower(enemyKing) ? 'q' : 'Q'))) return true;
+        if (col + i < 8 && (board[row][col + i] == (islower(enemyKing) ? 'r' : 'R') || board[row][col + i] == (islower(enemyKing) ? 'q' : 'Q'))) return true;
+        if (col - i >= 0 && (board[row][col - i] == (islower(enemyKing) ? 'r' : 'R') || board[row][col - i] == (islower(enemyKing) ? 'q' : 'Q'))) return true;
+    }
+
+
+    // Check for bishop/queen threats along diagonals
+    for (int i = 1; i < 8; ++i) {
+        if (row + i < 8 && col + i < 8 && (board[row + i][col + i] == (islower(enemyKing) ? 'b' : 'B') || board[row + i][col + i] == (islower(enemyKing) ? 'q' : 'Q'))) return true;
+        if (row - i >= 0 && col + i < 8 && (board[row - i][col + i] == (islower(enemyKing) ? 'b' : 'B') || board[row - i][col + i] == (islower(enemyKing) ? 'q' : 'Q'))) return true;
+        if (row + i < 8 && col - i >= 0 && (board[row + i][col - i] == (islower(enemyKing) ? 'b' : 'B') || board[row + i][col - i] == (islower(enemyKing) ? 'q' : 'Q'))) return true;
+        if (row - i >= 0 && col - i >= 0 && (board[row - i][col - i] == (islower(enemyKing) ? 'b' : 'B') || board[row - i][col - i] == (islower(enemyKing) ? 'q' : 'Q'))) return true;
+    }
+
+    return false;
+}
+
+
+array<int, 2> findOpposingKing(char (&board)[8][8], bool white) {
+    char opposingKing = white ? 'k' : 'K';
+    array<int, 2> kingCoords = {-1, -1}; // Initialize with invalid coordinates
+    
+    // Iterate through the board to find the opposing king
+    for (int row = 0; row < 8; ++row) {
+        for (int col = 0; col < 8; ++col) {
+            if (board[row][col] == opposingKing) {
+                kingCoords = {row, col};
+                return kingCoords; // Found the opposing king, return its coordinates
+            }
+        }
+    }
+    
+    return kingCoords;
+}
 
 bool notOnFriendly(char (&board)[8][8], const array<int, 4>& posIndices) {
     if (board[posIndices[2]][posIndices[3]] == '.') {
@@ -99,7 +172,9 @@ bool validateKingMove(char (&board)[8][8], const array<int, 4>& posIndices) {
     return false;
 }
 
-bool checkRookLike(char (&board)[8][8], const std::array<int, 4>& posIndices, char king) {
+vector<array<int,2>> checkRookLike(char (&board)[8][8], const std::array<int, 4>& posIndices, char king) {
+    vector<array<int,2>> attackVector;
+
     int channel, reference;
     if (posIndices[0] == posIndices[2]) {
         channel = posIndices[3];
@@ -107,18 +182,21 @@ bool checkRookLike(char (&board)[8][8], const std::array<int, 4>& posIndices, ch
 
         for (int i = reference + 1; i <= 7; ++i) {
             if (board[i][channel] == '.') {
+                attackVector.push_back({i, channel});
                 continue;
             } else if (board[i][channel] == king) {
-                return true;
+                return attackVector;
             } else {
                 break;
             }
         }
+        attackVector.clear();
         for (int i = reference - 1; i >= 0; --i) {
             if (board[i][channel] == '.') {
+                attackVector.push_back({i, channel});
                 continue;
             } else if (board[i][channel] == king) {
-                return true;
+                return attackVector;
             } else {
                 break;
             }
@@ -129,80 +207,89 @@ bool checkRookLike(char (&board)[8][8], const std::array<int, 4>& posIndices, ch
 
         for (int i = reference + 1; i <= 7; ++i) {
             if (board[channel][i] == '.') {
+                attackVector.push_back({channel, i});
                 continue;
             } else if (board[channel][i] == king) {
-                return true;
+                return attackVector;
             } else {
                 break;
             }
         }
+        attackVector.clear();
         for (int i = reference - 1; i >= 0; --i) {
             if (board[channel][i] == '.') {
+                attackVector.push_back({channel, i});
                 continue;
             } else if (board[channel][i] == king) {
-                return true;
+                return attackVector;
             } else {
                 break;
             }
         }
     }
-    return false;
+    return {};
 }
 
-bool checkBishopLike(char (&board)[8][8], const std::array<int, 4>& posIndices, char king) {
-    int colDirection;
-    int rowDirection;
+vector<array<int, 2>> checkBishopLike(char (&board)[8][8], const array<int, 4>& posIndices, char king) {
+    vector<array<int, 2>> attackVector;
+    array<array<int, 2>, 2> diagonalChannels = {{{1, 1}, {1, -1}}};
 
-    if ((posIndices[0] > posIndices[2] && posIndices[1] > posIndices[3]) || (posIndices[0] < posIndices[2] && posIndices[1] < posIndices[3])) {
-        colDirection = 1;
-        rowDirection = -1;
-    } else {
-        colDirection = 1;
-        rowDirection = 1;
-    }
+    for (auto direction : diagonalChannels) {
+        int rowDirection = direction[0];
+        int colDirection = direction[1];
 
-    for (int row = posIndices[2] + rowDirection, col = posIndices[3] + colDirection; row <= 7 && row >= 0 && col >= 0 && col <= 7; row += rowDirection, col += colDirection) {
-        if (board[row][col] == '.') {
-            continue;
-        } else if (board[row][col] == king) {
-            return true;
-        } else {
-            break;
+        // Forward diagonal
+        for (int row = posIndices[2] + rowDirection, col = posIndices[3] + colDirection; row <= 7 && row >= 0 && col >= 0 && col <= 7; row += rowDirection, col += colDirection) {
+            if (board[row][col] == '.') {
+                attackVector.push_back({row, col});
+            } else if (board[row][col] == king) {
+                return attackVector;
+            } else {
+                break;
+            }
+        }
+
+        // Backward diagonal
+        attackVector.clear(); // Clear attack vector for the next diagonal direction
+        for (int row = posIndices[2] - rowDirection, col = posIndices[3] - colDirection; row <= 7 && row >= 0 && col >= 0 && col <= 7; row -= rowDirection, col -= colDirection) {
+            if (board[row][col] == '.') {
+                attackVector.push_back({row, col});
+            } else if (board[row][col] == king) {
+                return attackVector;
+            } else {
+                break;
+            }
         }
     }
-    for (int row = posIndices[2] - rowDirection, col = posIndices[3] - colDirection; row <= 7 && row >= 0 && col >= 0 && col <= 7; row -= rowDirection, col -= colDirection) {
-        if (board[row][col] == '.') {
-            continue;
-        } else if (board[row][col] == king) {
-            return true;
-        } else {
-            break;
-        }
-    }
-    return false;
+
+    return {}; // Return empty vector if no attack vectors found
 }
 
-bool checkCheck(char (&board)[8][8], const std::array<int, 4>& posIndices, const char& piece) {
+vector<array<int,2>> checkCheck(char (&board)[8][8], const std::array<int, 4>& posIndices, const char& piece) {
     char king = std::isupper(piece) ? 'k' : 'K';
+    vector<array<int,2>> attackVector;
+    attackVector.push_back({posIndices[2], posIndices[3]});
 
     switch (piece) {
         case 'p':
             if ((posIndices[2] + 1 >= 0 && posIndices[3] + 1 <= 7 && board[posIndices[2] + 1][posIndices[3] + 1] == 'K') ||
                 (posIndices[2] + 1 >= 0 && posIndices[3] - 1 >= 0 && board[posIndices[2] + 1][posIndices[3] - 1] == 'K')) {
-                return true;
+                return attackVector;
             }
-            return false;
+            return {};
 
         case 'P':
             if ((posIndices[2] - 1 <= 7 && posIndices[3] + 1 <= 7 && board[posIndices[2] - 1][posIndices[3] + 1] == 'k') ||
                 (posIndices[2] - 1 <= 7 && posIndices[3] - 1 >= 0 && board[posIndices[2] - 1][posIndices[3] - 1] == 'k')) {
-                return true;
+                attackVector.push_back({posIndices[2], posIndices[3]});
+                return attackVector;
             }
-            return false;
+            return {};
 
         case 'R':
         case 'r':
-            return checkRookLike(board, posIndices, king);
+            attackVector = checkRookLike(board,posIndices,king);
+            return attackVector;
 
         case 'N':
         case 'n': {
@@ -214,7 +301,8 @@ bool checkCheck(char (&board)[8][8], const std::array<int, 4>& posIndices, const
                 nRow = posIndices[3] + move[1];
                 if (nCol >= 0 && nCol < 8 && nRow >= 0 && nRow < 8) {
                     if (board[nCol][nRow] == king) {
-                        return true;
+                        attackVector.push_back({posIndices[2], posIndices[3]});
+                        return attackVector;
                     }
                 }
             }
@@ -223,25 +311,36 @@ bool checkCheck(char (&board)[8][8], const std::array<int, 4>& posIndices, const
                 nRow = posIndices[3] + move[1];
                 if (nCol >= 0 && nCol < 8 && nRow >= 0 && nRow < 8) {
                     if (board[nCol][nRow] == king) {
-                        return true;
+                        attackVector.push_back({posIndices[2], posIndices[3]});
+                        return attackVector;
                     }
                 }
             }
-            return false;
+            return {};
         }
 
         case 'B':
         case 'b':
-            return checkBishopLike(board, posIndices, king);
+            attackVector = checkBishopLike(board,posIndices,king);
+            attackVector.push_back({posIndices[2], posIndices[3]});
+            return attackVector;
 
         case 'Q':
         case 'q':
-            return checkRookLike(board, posIndices, king) || checkBishopLike(board, posIndices, king);
+            attackVector = checkRookLike(board,posIndices,king);
+            if (attackVector.empty()){
+                attackVector = checkBishopLike(board, posIndices, king);
+            }
+            if (not attackVector.empty()) {
+                attackVector.push_back({posIndices[2], posIndices[3]});
+                return attackVector;
+            }
+            return {};
 
         default:
-            return false;
+            return {};
     }
-    return false;
+    return {};
 }
 bool friendly(char piece, char kingPiece) {
     if (isupper(kingPiece)) {
@@ -259,8 +358,8 @@ char recase(char king, char piece) {
     }
 }
 
+bool checkMate(char (&board)[8][8], const vector<array<int,2>> attackVector, const array<int, 2> kingCoords) {
 
-bool checkMate(char (&board)[8][8], const array<int, 2> kingCoords) {
 
     char king = board[kingCoords[0]][kingCoords[1]];
 
@@ -433,23 +532,28 @@ bool checkMate(char (&board)[8][8], const array<int, 2> kingCoords) {
         }
     }
 
-    // If no threats are found, the king is not in checkmate
-    return moveSetStack1.empty();
-}
+    moveSetStack2.clear();
 
-array<int, 2> findOpposingKing(char (&board)[8][8], bool white) {
-    char opposingKing = white ? 'k' : 'K';
-    array<int, 2> kingCoords = {-1, -1}; // Initialize with invalid coordinates
-    
-    // Iterate through the board to find the opposing king
-    for (int row = 0; row < 8; ++row) {
-        for (int col = 0; col < 8; ++col) {
-            if (board[row][col] == opposingKing) {
-                kingCoords = {row, col};
-                return kingCoords; // Found the opposing king, return its coordinates
-            }
+    array<int,2> enemyKingCoords = findOpposingKing(board, isupper(king));
+
+    // Check if move is covered by enemy king
+    for (const auto& move : moveSetStack1) {
+
+        if (!(abs(move[0]- enemyKingCoords[0]) - abs(move[1] - enemyKingCoords[1]) == 0)) {
+            moveSetStack2.push_back(move);
         }
     }
-    
-    return kingCoords;
+
+
+    // If there are available moves, return false, otherwise check if attack vector can be blocked by any pieces
+    if (moveSetStack2.empty()) {
+        for (auto location : attackVector) {
+            if (isBlockable(board, location, king)) {
+                return false;
+            }
+        }
+        return true;
+    } else {
+        return false;
+    }
 }
