@@ -5,7 +5,7 @@ CXXFLAGS = -Wall -std=c++11
 TARGET = Engine
 
 # Source files
-SRCS = main.cpp moveValidationFunctions.cpp #boardSnapshot.cpp
+SRCS = main.cpp moveValidationFunctions.cpp board.cpp
 
 # Object files
 OBJS = $(SRCS:.cpp=.o)

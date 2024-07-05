@@ -3,7 +3,7 @@
 #include <vector>
 #include <utility>
 #include <variant>
-#include "boardSnapshot.h"
+#include "board.h"
 #include "moveValidationFunctions.h"
 
 using namespace std;
@@ -176,32 +176,23 @@ int main() {
     //     {'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'},
     //     {'R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'}
     // };
-
-    char board[8][8] = {
-        {'.', '.', '.', '.', 'k', '.', '.', '.'},
-        {'.', '.', '.', '.', '.', '.', 'Q', '.'},
-        {'.', '.', '.', '.', '.', '.', '.', '.'},
-        {'.', '.', 'Q', '.', '.', '.', '.', '.'},
-        {'.', '.', '.', '.', '.', '.', '.', '.'},
-        {'.', '.', '.', '.', '.', '.', '.', '.'},
-        {'.', '.', '.', '.', '.', '.', '.', '.'},
-        {'.', '.', '.', '.', '.', '.', '.', '.'}
-    };
     
-    bool unwon = true;
-    string move;
-    bool white = true;
-    while(unwon) {
-        printBoard(board);
+    // bool unwon = true;
+    // string move;
+    // bool white = true;
+    // while(unwon) {
+    //     printBoard(board);
 
-        do {
-            cout << "Enter your move: ";
-            cin >> move;
-        } while (!validMove(move, board, white, unwon)); // Validates move and updates board if valid
-        white = !white;
-    }
+    //     do {
+    //         cout << "Enter your move: ";
+    //         cin >> move;
+    //     } while (!validMove(move, board, white, unwon)); // Validates move and updates board if valid
+    //     white = !white;
+    // }
 
-    cout << "Game Over" << endl;
+    // cout << "Game Over" << endl;
+
+    Board board;
 
     return 0;
 }
