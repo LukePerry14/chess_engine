@@ -2,13 +2,16 @@
 #include <vector>
 #include <bitset>
 #include <algorithm>
+#include <climits>
+#include <cmath>
+#include <limits>
 #include "board.h"
 
 typedef uint64_t Bitboard;
 using namespace std;
 
 Board::Board() {
-    // Initialize bitboards for starting position in binary format
+    // Initialize bitboards for starting position
     black_pawns   = 0b0000000011111111000000000000000000000000000000000000000000000000;
     black_knights = 0b0100001000000000000000000000000000000000000000000000000000000000;
     black_bishops = 0b0010010000000000000000000000000000000000000000000000000000000000;
@@ -21,8 +24,8 @@ Board::Board() {
     white_rooks   = 0b0000000000000000000000000000000000000000000000000000000010000001;
     white_queens  = 0b0000000000000000000000000000000000000000000000000000000000001000;
     white_kings   = 0b0000000000000000000000000000000000000000000000000000000000010000;
-
     whiteTurn = true;
+    maxDepth = 5;
 
     knight_move_masks = generate_knight_moves();
     bishop_move_masks = generate_bishop_moves();
@@ -31,223 +34,415 @@ Board::Board() {
         queen_move_masks.push_back(rook_move_masks[t] | bishop_move_masks[t]);
     }
     king_move_masks = generate_king_moves();
+
+    float alpha = numeric_limits<float>::lowest();
+    float beta = numeric_limits<float>::max();
+    auto ret = minimax(true, alpha, beta, maxDepth, piece_bitboards);
+    cout << ret.first << endl;
+    cout << bitset<16>(ret.second) << endl;
 }
 
-// Method to generate legal moves
-vector<pair<uint16_t, uint8_t>> Board::generate_legal_moves(bool white) {
-    vector<pair<uint16_t, uint8_t>> moves;
+pair<vector<pair<uint16_t, uint8_t>>, float> Board::generate_legal_moves_and_evaluate(bool white, unordered_map<Piece, Bitboard> pieces) {
+    vector<pair<uint16_t, uint8_t>> white_moves;
+    vector<pair<uint16_t, uint8_t>> black_moves;
+    Bitboard white_pawns = pieces[WPAWN];
+    Bitboard white_knights = pieces[WKNIGHT];
+    Bitboard white_bishops = pieces[WBISHOP];
+    Bitboard white_rooks = pieces[WROOK];
+    Bitboard white_queens = pieces[WQUEEN];
+    Bitboard white_kings = pieces[WKING];
+
+    Bitboard black_pawns = pieces[BPAWN];
+    Bitboard black_knights = pieces[BKNIGHT];
+    Bitboard black_bishops = pieces[BBISHOP];
+    Bitboard black_rooks = pieces[BROOK];
+    Bitboard black_queens = pieces[BQUEEN];
+    Bitboard black_kings = pieces[BKING];
+
+    int white_king_pos = find_king_position(white_kings);
+    int black_king_pos = find_king_position(black_kings);
+
     Bitboard own_pieces = white ? (white_pawns | white_knights | white_bishops | white_rooks | white_queens | white_kings)
                                 : (black_pawns | black_knights | black_bishops | black_rooks | black_queens | black_kings);
 
     Bitboard opponent_pieces = white ? (black_pawns | black_knights | black_bishops | black_rooks | black_queens | black_kings)
                                      : (white_pawns | white_knights | white_bishops | white_rooks | white_queens | white_kings);
 
+    float score = 0;
 
-    if (white) {
-        Bitboard square_mask = 1ULL;
-        for (int pos = 0; pos < 64; pos++) {
-            if (pos > 7) {
-                if (white_pawns & square_mask) {
-                    pawn_moves(moves, pos, true);
-                }
-            }
-            if (white_knights & square_mask) {
-                knight_moves(moves, pos, own_pieces);
-            } else if (white_bishops & square_mask) {
-                bishop_moves(moves, pos, own_pieces, opponent_pieces);
-            } else if (white_rooks & square_mask) {
-                rook_moves(moves, pos, own_pieces, opponent_pieces);
-            } else if (white_queens & square_mask) {
-                queen_moves(moves, pos, own_pieces, opponent_pieces);
-            } else if (white_kings & square_mask) {
-                king_moves(moves, pos, true, own_pieces);
-            }
+    Bitboard square_mask = 1ULL;
+    for (int pos = 0; pos < 64; pos++) {
+        if (pos > 0) {
             square_mask = square_mask << 1;
         }
-        for(auto move : moves) {
-            uint16_t m = move.first;
-            cout << bitset<16>(m) << endl;
-        }
 
-    } else {
-        Bitboard square_mask = 1ULL;
-        for (int pos = 0; pos < 64; pos++) {
-            if (pos < 56) {
-                if (black_pawns & square_mask) {
-                    pawn_moves(moves, pos, false);
+        if (pos > 7) {
+            if (white_pawns & square_mask) {
+                score +=1;
+                pawn_moves(white_moves, pos, true, black_king_pos, pieces);
+                score += (white_pawn_value_mask[pos] + 
+                    ((((pos + 7) % 8) == ((pos % 8) - 1) && (pos + 7 == black_king_pos)) || 
+                    (((pos + 9) % 8) == ((pos % 8) + 1) && (pos + 9 == black_king_pos))) ? 4 : 0); // Add bonus value if check
+
+                continue;
+            }
+        }
+        if (white_knights & square_mask) {
+            score += 3;
+            int before_moves = white_moves.size();
+            knight_moves(white_moves, pos, own_pieces, black_king_pos, pieces);
+            int after_moves = white_moves.size();
+            score += (0.1 * (after_moves - before_moves) * knight_value_mask[pos]);
+
+            size_t start_index = white_moves.size() - (after_moves - before_moves);
+            for (size_t i = start_index; i < white_moves.size(); ++i) {
+                if (white_moves[i].first == black_king_pos) {
+                    score += 4;
                 }
             }
-            if (black_knights & square_mask) {
-                knight_moves(moves, pos, own_pieces);
-            } else if (black_bishops & square_mask) {
-                bishop_moves(moves, pos, own_pieces, opponent_pieces);
-            } else if (black_rooks & square_mask) {
-                rook_moves(moves, pos, own_pieces, opponent_pieces);
-            } else if (black_queens & square_mask) {
-                queen_moves(moves, pos, own_pieces, opponent_pieces);
-            } else if (black_kings & square_mask) {
-                king_moves(moves, pos, false, own_pieces);
+            continue;
+        } else if (white_bishops & square_mask) {
+            score += 3;
+            int before_moves = white_moves.size();
+            bishop_moves(white_moves, pos, own_pieces, opponent_pieces, black_king_pos, pieces);
+            int after_moves = white_moves.size();
+            score += (0.1 * (after_moves - before_moves) * bishop_value_mask[pos]);
+
+            size_t start_index = white_moves.size() - (after_moves - before_moves);
+            for (size_t i = start_index; i < white_moves.size(); ++i) {
+                if (white_moves[i].first == black_king_pos) {
+                    score += 4;
+                }
             }
-            square_mask = square_mask << 1;
+            continue;
+        } else if (white_rooks & square_mask) {
+            score += 5;
+            int before_moves = white_moves.size();
+            rook_moves(white_moves, pos, own_pieces, opponent_pieces, black_king_pos, pieces);
+            int after_moves = white_moves.size();
+            score += (0.1 * (after_moves - before_moves) * rook_value_mask[pos]);
+
+            size_t start_index = white_moves.size() - (after_moves - before_moves);
+            for (size_t i = start_index; i < white_moves.size(); ++i) {
+                if (white_moves[i].first == black_king_pos) {
+                    score += 4;
+                }
+            }
+            continue;
+        } else if (white_queens & square_mask) {
+            score += 9;
+            int before_moves = white_moves.size();
+            queen_moves(white_moves, pos, own_pieces, opponent_pieces, black_king_pos, pieces);
+            int after_moves = white_moves.size();
+            score += (0.1 * (after_moves - before_moves) * queen_value_mask[pos]);
+
+            size_t start_index = white_moves.size() - (after_moves - before_moves);
+            for (size_t i = start_index; i < white_moves.size(); ++i) {
+                if (white_moves[i].first == black_king_pos) {
+                    score += 4;
+                }
+            }
+            continue;
+        } else if (white_kings & square_mask) {
+            int before_moves = white_moves.size();
+            king_moves(white_moves, pos, true, own_pieces, pieces);
+            int after_moves = white_moves.size();
+            if (after_moves - before_moves == 0) {
+                score = numeric_limits<float>::lowest();
+                break;
+            }
+            continue;
+        }
+        if (pos < 56) {
+            if (black_pawns & square_mask) {
+                pawn_moves(black_moves, pos, false, white_king_pos, pieces);
+                score -= (white_pawn_value_mask[pos] + 
+                    ((((pos + 7) % 8) == ((pos % 8) - 1) && (pos + 7 == white_king_pos)) || 
+                    (((pos + 9) % 8) == ((pos % 8) + 1) && (pos + 9 == white_king_pos))) ? 4 : 0); // Add bonus value if check
+                continue;
+            }
+        }
+        if (black_knights & square_mask) {
+            score -= 3;
+            int before_moves = black_moves.size();
+            knight_moves(black_moves, pos, own_pieces, white_king_pos, pieces);
+            int after_moves = black_moves.size();
+            score -= (0.1 * (after_moves - before_moves) * knight_value_mask[pos]);
+
+            size_t start_index = black_moves.size() - (after_moves - before_moves);
+            for (size_t i = start_index; i < black_moves.size(); ++i) {
+                if (black_moves[i].first == white_king_pos) {
+                    score -= 4;
+                }
+            }
+            continue;
+        } else if (black_bishops & square_mask) {
+            score -= 3;
+            int before_moves = black_moves.size();
+            bishop_moves(black_moves, pos, own_pieces, opponent_pieces, white_king_pos, pieces);
+            int after_moves = black_moves.size();
+            score -= (0.1 * (after_moves - before_moves) * bishop_value_mask[pos]);
+
+            size_t start_index = black_moves.size() - (after_moves - before_moves);
+            for (size_t i = start_index; i < black_moves.size(); ++i) {
+                if (black_moves[i].first == white_king_pos) {
+                    score -= 4;
+                }
+            }
+            continue;
+        } else if (black_rooks & square_mask) {
+            score -= 5;
+            int before_moves = black_moves.size();
+            rook_moves(black_moves, pos, own_pieces, opponent_pieces, white_king_pos, pieces);
+            int after_moves = black_moves.size();
+            score -= (0.1 * (after_moves - before_moves) * rook_value_mask[pos]);
+
+            size_t start_index = black_moves.size() - (after_moves - before_moves);
+            for (size_t i = start_index; i < black_moves.size(); ++i) {
+                if (black_moves[i].first == white_king_pos) {
+                    score -= 4;
+                }
+            }
+            continue;
+        } else if (black_queens & square_mask) {
+            score -= 9;
+            int before_moves = black_moves.size();
+            queen_moves(black_moves, pos, own_pieces, opponent_pieces, white_king_pos, pieces);
+            int after_moves = black_moves.size();
+            score -= (0.1 * (after_moves - before_moves) * queen_value_mask[pos]);
+
+            size_t start_index = black_moves.size() - (after_moves - before_moves);
+            for (size_t i = start_index; i < black_moves.size(); ++i) {
+                if (black_moves[i].first == white_king_pos) {
+                    score -= 4;
+                }
+            }
+            continue;
+        } else if (black_kings & square_mask) {
+            int before_moves = black_moves.size();
+            king_moves(black_moves, pos, false, own_pieces, pieces);
+            int after_moves = black_moves.size();
+            
+            if (after_moves - before_moves == 0) {
+                score = numeric_limits<float>::lowest();
+                break;
+            }
+            continue;
         }
     }
-    return moves;
+    vector<pair<uint16_t, uint8_t>>& moves = white? white_moves : black_moves;
+    return make_pair(moves, score);
 }
 
-void Board::pawn_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, bool white) {
+int Board::find_king_position(Bitboard king_board) {
+    for (int pos = 0; pos < 64; ++pos) {
+        if (king_board & (1ULL << pos)) {
+            return pos;
+        }
+    }
+    // Return -1 if the king is not found
+    return -1;
+}
+
+void Board::pawn_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, bool white, int& enemy_king_pos, unordered_map<Piece, Bitboard>& pieces) {
+    uint8_t bonus = 0;
+    pair<Piece,uint8_t> piece_and_val;
+    Piece piece;
+    uint8_t val;
     if (white) {
         // Forward moves
         if (pos >= 8 && pos <= 15) {
-            if (get_piece_at(pos+8).first == EMPTY) {
-                moves.push_back(make_pair((pos | ((pos + 8) << 8)), 0));
+            if (get_piece_at(pos+8, pieces).first == EMPTY) {
+                if ((((pos + 15) % 8) == ((pos % 8) - 1) && (pos + 15 == enemy_king_pos)) || (((pos + 17) % 8) == ((pos % 8) + 1) && (pos + 17 == enemy_king_pos))){
+                    bonus += 2;
+                }
+                moves.push_back(make_pair((pos | ((pos + 8) << 8)), 0 + bonus));
 
-                if (get_piece_at(pos+16).first == EMPTY) {
-                    moves.push_back(make_pair((pos | ((pos + 16) << 8)), 0));
+                if (get_piece_at(pos+16, pieces).first == EMPTY) {
+                    if ((((pos + 23) % 8) == ((pos % 8) - 1) && (pos + 23 == enemy_king_pos)) || (((pos + 25) % 8) == ((pos % 8) + 1) && (pos + 25 == enemy_king_pos))){
+                        bonus += 2;
+                    }
+                    moves.push_back(make_pair((pos | ((pos + 16) << 8)), 0 + bonus));
                 }
             }
-        } else {
-            if (get_piece_at(pos+8).first == EMPTY) {
-                moves.push_back(make_pair((pos | ((pos + 8) << 8)), 0));
+        } else if (pos <=55) {
+            if (get_piece_at(pos+8, pieces).first == EMPTY) {
+                moves.push_back(make_pair((pos | ((pos + 8) << 8)), 0)); // add logic to upgrade pawn
             }
         }
 
         // Leftward taking Moves
-        auto piece_and_val = get_piece_at((pos+7));
-        Piece piece = piece_and_val.first;
-        uint8_t val = piece_and_val.second;
-        switch (piece) {
-            case EMPTY:
-                break;
-            case BPAWN:
-                moves.push_back(make_pair((pos | ((pos+7) << 8)), val));
-                break;
-            case BBISHOP:
-                moves.push_back(make_pair((pos | ((pos+7) << 8)), val));
-                break;
-            case BKNIGHT:
-                moves.push_back(make_pair((pos | ((pos+7) << 8)), val));
-                break;
-            case BROOK:
-                moves.push_back(make_pair((pos | ((pos+7) << 8)), val));
-                break;
-            case BQUEEN:
-                moves.push_back(make_pair((pos | ((pos+7) << 8)), val));
-                break;
-            default:
-                break;
+        if ((pos + 7) % 8 == (pos & 8) - 1) {
+            piece_and_val = get_piece_at((pos+7), pieces);
+            piece = piece_and_val.first;
+            val = piece_and_val.second;
+            if ((((pos + 14) % 8) == ((pos % 8) - 1) && (pos + 14 == enemy_king_pos)) || (((pos + 16) % 8) == ((pos % 8) + 1) && (pos + 16 == enemy_king_pos))) {
+                bonus += 2;
+            }
+            switch (piece) {
+                case EMPTY:
+                    break;
+                case BPAWN:
+                    moves.push_back(make_pair((pos | ((pos+7) << 8)), val + bonus));
+                    break;
+                case BBISHOP:
+                    moves.push_back(make_pair((pos | ((pos+7) << 8)), val + bonus));
+                    break;
+                case BKNIGHT:
+                    moves.push_back(make_pair((pos | ((pos+7) << 8)), val + bonus));
+                    break;
+                case BROOK:
+                    moves.push_back(make_pair((pos | ((pos+7) << 8)), val + bonus));
+                    break;
+                case BQUEEN:
+                    moves.push_back(make_pair((pos | ((pos+7) << 8)), val + bonus));
+                    break;
+                default:
+                    break;
+            }
         }
 
         // Rightward Taking moves
-        piece_and_val = get_piece_at((pos+9));
-        piece = piece_and_val.first;
-        val = piece_and_val.second;
-        switch (piece) {
-            case EMPTY:
-                break;
-            case BPAWN:
-                moves.push_back(make_pair((pos | ((pos+9) << 8)), val));
-                break;
-            case BBISHOP:
-                moves.push_back(make_pair((pos | ((pos+9) << 8)), val));
-                break;
-            case BKNIGHT:
-                moves.push_back(make_pair((pos | ((pos+9) << 8)), val));
-                break;
-            case BROOK:
-                moves.push_back(make_pair((pos | ((pos+9) << 8)), val));
-                break;
-            case BQUEEN:
-                moves.push_back(make_pair((pos | ((pos+9) << 8)), val));
-                break;
-            default:
-                break;
+        if ((pos + 9) % 8 == (pos & 8) + 1) {
+            piece_and_val = get_piece_at((pos+9), pieces);
+            piece = piece_and_val.first;
+            val = piece_and_val.second;
+            if ((((pos + 16) % 8) == ((pos % 8) - 1) && (pos + 16 == enemy_king_pos)) || (((pos + 18) % 8) == ((pos % 8) + 1) && (pos + 18 == enemy_king_pos))) {
+                bonus += 2;
+            }
+            switch (piece) {
+                case EMPTY:
+                    break;
+                case BPAWN:
+                    moves.push_back(make_pair((pos | ((pos+9) << 8)), val + bonus));
+                    break;
+                case BBISHOP:
+                    moves.push_back(make_pair((pos | ((pos+9) << 8)), val + bonus));
+                    break;
+                case BKNIGHT:
+                    moves.push_back(make_pair((pos | ((pos+9) << 8)), val + bonus));
+                    break;
+                case BROOK:
+                    moves.push_back(make_pair((pos | ((pos+9) << 8)), val + bonus));
+                    break;
+                case BQUEEN:
+                    moves.push_back(make_pair((pos | ((pos+9) << 8)), val + bonus));
+                    break;
+                default:
+                    break;
+            }
         }
     } else {
         // Forward moves
         if (pos >= 48 && pos <= 55) {
-            if (get_piece_at(pos-8).first == EMPTY) {
+            if (get_piece_at(pos-8, pieces).first == EMPTY) {
+                if ((((pos - 17) % 8) == ((pos % 8) - 1) && (pos - 17 == enemy_king_pos)) || (((pos - 15) % 8) == ((pos % 8) + 1) && (pos - 15 == enemy_king_pos))){
+                    bonus += 2;
+                }
                 moves.push_back(make_pair((pos | ((pos - 8) << 8)), 0));
 
-                if (get_piece_at(pos-16).first == EMPTY) {
+                if (get_piece_at(pos-16, pieces).first == EMPTY) {
+                    if ((((pos - 27) % 8) == ((pos % 8) - 1) && (pos - 27 == enemy_king_pos)) || (((pos - 25) % 8) == ((pos % 8) + 1) && (pos - 25 == enemy_king_pos))){
+                        bonus += 2;
+                    }
                     moves.push_back(make_pair((pos | ((pos - 16) << 8)), 0));
                 }
             }
-        } else {
-            if (get_piece_at(pos-8).first == EMPTY) {
-                moves.push_back(make_pair((pos | ((pos - 8) << 8)), 0));
+        } else if(pos >= 8) {
+            if (get_piece_at(pos-8, pieces).first == EMPTY) {
+                moves.push_back(make_pair((pos | ((pos - 8) << 8)), 0)); // add logic to upgrade pawn
             }
         }
 
         // Leftward taking Moves
-        auto piece_and_val = get_piece_at((pos-9));
-        Piece piece = piece_and_val.first;
-        uint8_t val = piece_and_val.second;
-        switch (piece) {
-            case EMPTY:
-                break;
-            case BPAWN:
-                moves.push_back(make_pair((pos | ((pos-9) << 8)), val));
-                break;
-            case BBISHOP:
-                moves.push_back(make_pair((pos | ((pos-9) << 8)), val));
-                break;
-            case BKNIGHT:
-                moves.push_back(make_pair((pos | ((pos-9) << 8)), val));
-                break;
-            case BROOK:
-                moves.push_back(make_pair((pos | ((pos-9) << 8)), val));
-                break;
-            case BQUEEN:
-                moves.push_back(make_pair((pos | ((pos-9) << 8)), val));
-                break;
-            default:
-                break;
+        if ((pos - 9) % 8 == (pos & 8) - 1) {
+            piece_and_val = get_piece_at((pos-9), pieces);
+            piece = piece_and_val.first;
+            val = piece_and_val.second;
+            if ((((pos - 18) % 8) == ((pos % 8) - 1) && (pos - 18 == enemy_king_pos)) || (((pos - 16) % 8) == ((pos % 8) + 1) && (pos - 16 == enemy_king_pos))) {
+                bonus += 2;
+            }
+            switch (piece) {
+                case EMPTY:
+                    break;
+                case BPAWN:
+                    moves.push_back(make_pair((pos | ((pos-9) << 8)), val + bonus));
+                    break;
+                case BBISHOP:
+                    moves.push_back(make_pair((pos | ((pos-9) << 8)), val + bonus));
+                    break;
+                case BKNIGHT:
+                    moves.push_back(make_pair((pos | ((pos-9) << 8)), val + bonus));
+                    break;
+                case BROOK:
+                    moves.push_back(make_pair((pos | ((pos-9) << 8)), val + bonus));
+                    break;
+                case BQUEEN:
+                    moves.push_back(make_pair((pos | ((pos-9) << 8)), val + bonus));
+                    break;
+                default:
+                    break;
+            }
         }
-
         // Rightward Taking moves
-        piece_and_val = get_piece_at((pos-7));
-        piece = piece_and_val.first;
-        val = piece_and_val.second;
-        switch (piece) {
-            case EMPTY:
-                break;
-            case BPAWN:
-                moves.push_back(make_pair((pos | ((pos-7) << 8)), val));
-                break;
-            case BBISHOP:
-                moves.push_back(make_pair((pos | ((pos-7) << 8)), val));
-                break;
-            case BKNIGHT:
-                moves.push_back(make_pair((pos | ((pos-7) << 8)), val));
-                break;
-            case BROOK:
-                moves.push_back(make_pair((pos | ((pos-7) << 8)), val));
-                break;
-            case BQUEEN:
-                moves.push_back(make_pair((pos | ((pos-7) << 8)), val));
-                break;
-            default:
-                break;
-        }
-    }
-}
-
-void Board::knight_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, Bitboard& own_pieces) {
-    Bitboard possible_moves = knight_move_masks[pos];
-    
-    for (int target_pos = 0; target_pos < 64; ++target_pos) {
-        if (possible_moves & (1ULL << target_pos)) {
-            if (!(own_pieces & (1ULL << target_pos))) {
-                auto piece_and_val = get_piece_at(target_pos);
-                uint8_t val = piece_and_val.second;
-                uint16_t move =  (target_pos << 8) | pos;
-                moves.push_back(make_pair(move, val));
+        if ((pos - 7) % 8 == (pos & 8) + 1) {
+            piece_and_val = get_piece_at((pos-7), pieces);
+            piece = piece_and_val.first;
+            val = piece_and_val.second;
+            if ((((pos - 16) % 8) == ((pos % 8) - 1) && (pos - 16 == enemy_king_pos)) || (((pos - 14) % 8) == ((pos % 8) + 1) && (pos - 14 == enemy_king_pos))) {
+                bonus += 2;
+            }
+            switch (piece) {
+                case EMPTY:
+                    break;
+                case BPAWN:
+                    moves.push_back(make_pair((pos | ((pos-7) << 8)), val + bonus));
+                    break;
+                case BBISHOP:
+                    moves.push_back(make_pair((pos | ((pos-7) << 8)), val + bonus));
+                    break;
+                case BKNIGHT:
+                    moves.push_back(make_pair((pos | ((pos-7) << 8)), val + bonus));
+                    break;
+                case BROOK:
+                    moves.push_back(make_pair((pos | ((pos-7) << 8)), val + bonus));
+                    break;
+                case BQUEEN:
+                    moves.push_back(make_pair((pos | ((pos-7) << 8)), val + bonus));
+                    break;
+                default:
+                    break;
             }
         }
     }
 }
 
-void Board::bishop_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, Bitboard& own_pieces, Bitboard& opponent_pieces) {
+void Board::knight_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, Bitboard& own_pieces, int& enemy_king_pos, unordered_map<Piece, Bitboard>& pieces) {
+    Bitboard possible_moves = knight_move_masks[pos];
+    int bonus = 0;
+    
+    for (int target_pos = 0; target_pos < 64; ++target_pos) {
+        if (possible_moves & (1ULL << target_pos)) {
+            if (!(own_pieces & (1ULL << target_pos))) {
+                auto piece_and_val = get_piece_at(target_pos, pieces);
+                uint8_t val = piece_and_val.second;
+                uint16_t move =  (target_pos << 8) | pos;
+                if (((target_pos + 15 < 63) && (((target_pos+15) % 8 == (target_pos%8) - 1) && (target_pos + 15 == enemy_king_pos))) || ((target_pos+17 < 63) &&(((target_pos+17) % 8 == (target_pos%8) + 1) && (target_pos + 17 == enemy_king_pos)))) {
+                    bonus = 4; // check in upward direction
+                } else if (((target_pos + 10 < 63) && (((target_pos+10) % 8 == (target_pos%8) + 2) && (target_pos + 10 == enemy_king_pos))) || ((target_pos + 6 < 63) &&(((target_pos+6) % 8 == (target_pos%8) - 2) && (target_pos + 6 == enemy_king_pos)))) {
+                    bonus = 4; // check in top half of semi-sphere
+                } else if (((target_pos - 10 > 0) && (((target_pos-10) % 8 == (target_pos%8) - 2) && (target_pos - 10 == enemy_king_pos))) || ((target_pos - 6 > 0) &&(((target_pos-6) % 8 == (target_pos%8) + 2) && (target_pos - 6 == enemy_king_pos)))) {
+                    bonus = 4; // check in downard direction
+                } else if (((target_pos - 17 > 0) && (((target_pos-17) % 8 == (target_pos%8) -1) && (target_pos - 17 == enemy_king_pos))) || ((target_pos - 15 > 0) &&(((target_pos-15) % 8 == (target_pos%8) + 1) && (target_pos - 15 == enemy_king_pos)))) {
+                    bonus = 4; // // check in bottom half of semi-sphere
+                }
+                moves.push_back(make_pair(move, val + bonus));
+            }
+        }
+    }
+}
+
+void Board::bishop_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, Bitboard& own_pieces, Bitboard& opponent_pieces, int& enemy_king_pos, unordered_map<Piece, Bitboard>& pieces) {
     int x = pos % 8;
     int y = pos / 8;
 
@@ -267,12 +462,33 @@ void Board::bishop_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, Bitbo
             int target_pos = ny * 8 + nx;
 
             if (own_pieces & (1ULL << target_pos)) {
-                break; // stop if a piece is blocked by own piece
+                break;
             }
 
-            auto piece_and_val = get_piece_at(target_pos);
+            auto piece_and_val = get_piece_at(target_pos, pieces);
             uint8_t val = piece_and_val.second;
             uint16_t move = pos | (target_pos << 8);
+            for (int m = 0; m < 4; ++m) {
+                int mdx = directions[m][0];
+                int mdy = directions[m][1];
+
+                for (int mdistance = 1; mdistance < 8; ++mdistance) {
+                    int mnx = x + mdx * mdistance;
+                    int mny = y + mdy * mdistance;
+
+                    if (mnx < 0 || mnx >= 8 || mny < 0 || mny >= 8) break;
+
+                    int mtarget_pos = mny * 8 + mnx;
+
+                    if (target_pos == enemy_king_pos) {
+                        val += 2;
+                    }
+                    if ((own_pieces & (1ULL << mtarget_pos)) || (opponent_pieces & (1ULL << mtarget_pos))) {
+                        break;
+                    }
+
+                }
+            }
             moves.push_back(make_pair(move, val));
 
             if (opponent_pieces & (1ULL << target_pos)) {
@@ -282,7 +498,7 @@ void Board::bishop_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, Bitbo
     }
 }
 
-void Board::rook_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, Bitboard& own_pieces, Bitboard& opponent_pieces) {
+void Board::rook_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, Bitboard& own_pieces, Bitboard& opponent_pieces, int& enemy_king_pos, unordered_map<Piece, Bitboard>& pieces) {
     int x = pos % 8;
     int y = pos / 8;
 
@@ -305,9 +521,30 @@ void Board::rook_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, Bitboar
                 break; // stop if a piece is blocked by own piece
             }
 
-            auto piece_and_val = get_piece_at(target_pos);
+            auto piece_and_val = get_piece_at(target_pos, pieces);
             uint8_t val = piece_and_val.second;
             uint16_t move = pos | (target_pos << 8);
+            for (int m = 0; m < 4; ++m) {
+                int mdx = directions[m][0];
+                int mdy = directions[m][1];
+
+                for (int mdistance = 1; mdistance < 8; ++mdistance) {
+                    int mnx = x + mdx * mdistance;
+                    int mny = y + mdy * mdistance;
+
+                    if (mnx < 0 || mnx >= 8 || mny < 0 || mny >= 8) break;
+
+                    int mtarget_pos = mny * 8 + mnx;
+
+                    if (mtarget_pos == enemy_king_pos) {
+                        val +=2;
+                    }
+
+                    if ((own_pieces & (1ULL << target_pos)) || (opponent_pieces & (1ULL << target_pos))){
+                        break;
+                    }
+                }
+            }
             moves.push_back(make_pair(move, val));
 
             if (opponent_pieces & (1ULL << target_pos)) {
@@ -317,19 +554,19 @@ void Board::rook_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, Bitboar
     }
 }
 
-void Board::queen_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, Bitboard& own_pieces, Bitboard& opponent_pieces) {
-    bishop_moves(moves, pos, own_pieces, opponent_pieces);
-    rook_moves(moves, pos, own_pieces, opponent_pieces);
+void Board::queen_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, Bitboard& own_pieces, Bitboard& opponent_pieces, int& enemy_king_pos, unordered_map<Piece, Bitboard>& pieces) {
+    bishop_moves(moves, pos, own_pieces, opponent_pieces, enemy_king_pos, pieces);
+    rook_moves(moves, pos, own_pieces, opponent_pieces, enemy_king_pos, pieces);
 }
 
-void Board::king_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, bool white, Bitboard& own_pieces) {
+void Board::king_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, bool white, Bitboard& own_pieces, unordered_map<Piece, Bitboard>& pieces) {
     Bitboard possible_moves = king_move_masks[pos];
 
     for (int target_pos = 0; target_pos < 64; ++target_pos) {
         if (possible_moves & (1ULL << target_pos)) {
             if (!(own_pieces & (1ULL << target_pos))) {
-                if (!(is_square_attacked(target_pos, white))){
-                    auto piece_and_val = get_piece_at(target_pos);
+                if (!(is_square_attacked(target_pos, white, pieces))){
+                    auto piece_and_val = get_piece_at(target_pos, pieces);
                     uint8_t val = piece_and_val.second;
                     uint16_t move = pos | (target_pos << 8);
                     moves.push_back(make_pair(move, val));
@@ -345,7 +582,7 @@ void Board::king_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, bool wh
             if (!(own_pieces & (1ULL << 5)) && !(own_pieces & (1ULL << 6))) {
                 bool is_valid_castle = true;
                 for (int i = 4; i <= 6; ++i) {
-                    if (is_square_attacked(i, false)) {
+                    if (is_square_attacked(i, false, pieces)) {
                         is_valid_castle = false;
                         break;
                     }
@@ -360,7 +597,7 @@ void Board::king_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, bool wh
             if (!(own_pieces & (1ULL << 1)) && !(own_pieces & (1ULL << 2)) && !(own_pieces & (1ULL << 3))) {
                 bool is_valid_castle = true;
                 for (int i = 2; i <= 4; ++i) {
-                    if (is_square_attacked(i, false)) {
+                    if (is_square_attacked(i, false, pieces)) {
                         is_valid_castle = false;
                         break;
                     }
@@ -376,7 +613,7 @@ void Board::king_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, bool wh
             if (!(own_pieces & (1ULL << 61)) && !(own_pieces & (1ULL << 62))) {
                 bool is_valid_castle = true;
                 for (int i = 60; i <= 62; ++i) {
-                    if (is_square_attacked(i, true)) {
+                    if (is_square_attacked(i, true, pieces)) {
                         is_valid_castle = false;
                         break;
                     }
@@ -391,7 +628,7 @@ void Board::king_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, bool wh
             if (!(own_pieces & (1ULL << 59)) && !(own_pieces & (1ULL << 58)) && !(own_pieces & (1ULL << 57))) {
                 bool is_valid_castle = true;
                 for (int i = 58; i <= 60; ++i) {
-                    if (is_square_attacked(i, true)) {
+                    if (is_square_attacked(i, true, pieces)) {
                         is_valid_castle = false;
                         break;
                     }
@@ -404,7 +641,20 @@ void Board::king_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, bool wh
     }
 }
 
-bool Board::is_square_attacked(int square_index, bool white) {
+bool Board::is_square_attacked(int square_index, bool white, unordered_map<Piece, Bitboard>& pieces) {
+    Bitboard white_pawns = pieces[WPAWN];
+    Bitboard white_knights = pieces[WKNIGHT];
+    Bitboard white_bishops = pieces[WBISHOP];
+    Bitboard white_rooks = pieces[WROOK];
+    Bitboard white_queens = pieces[WQUEEN];
+    Bitboard white_kings = pieces[WKING];
+
+    Bitboard black_pawns = pieces[BPAWN];
+    Bitboard black_knights = pieces[BKNIGHT];
+    Bitboard black_bishops = pieces[BBISHOP];
+    Bitboard black_rooks = pieces[BROOK];
+    Bitboard black_queens = pieces[BQUEEN];
+    Bitboard black_kings = pieces[BKING];
     // Check if the square is attacked by opponent's pawns
     if (white) {
         if (square_index >= 8) {
@@ -578,29 +828,45 @@ vector<Bitboard> Board::generate_king_moves() {
     return king_moves;
 }
 
-void Board::make_move(const uint16_t& move) {
+unordered_map<Piece, Bitboard> Board::make_move(const uint16_t& move, unordered_map<Piece, Bitboard>& pieces) {
     Bitboard startingPos = 1ULL << (move & 0xFF);
     Bitboard endingPos = 1ULL << ((move >> 8) & 0xFF);
 
-    Piece startPiece = get_piece_at(move & 0xFF).first;
-    Piece endPiece = get_piece_at((move >> 8) & 0xFF).first;
+    Piece startPiece = get_piece_at(move & 0xFF, pieces).first;
+    Piece endPiece = get_piece_at((move >> 8) & 0xFF, pieces).first;
 
     if (endPiece == EMPTY) {
-        Bitboard& capturing = *piece_bitboards[startPiece];
+        Bitboard& capturing = pieces[startPiece];
         capturing ^= startingPos;
         capturing ^= endingPos;
     } else {
-        Bitboard& captured = *piece_bitboards[endPiece];
+        Bitboard& captured = pieces[endPiece];
         captured ^= endingPos;
 
-        Bitboard& capturing = *piece_bitboards[startPiece];
+        Bitboard& capturing = pieces[startPiece];
         capturing ^= startingPos;
         capturing ^= endingPos;
     }
+
+    return pieces;
 }
 
-pair<Piece,uint8_t> Board::get_piece_at(int square_index) const {
-    Bitboard square_mask = 1ULL << square_index;
+pair<Piece, uint8_t> Board::get_piece_at(int square_index, const unordered_map<Piece, Bitboard>& pieces) const {
+    const Bitboard white_pawns = pieces.at(WPAWN);
+    const Bitboard white_knights = pieces.at(WKNIGHT);
+    const Bitboard white_bishops = pieces.at(WBISHOP);
+    const Bitboard white_rooks = pieces.at(WROOK);
+    const Bitboard white_queens = pieces.at(WQUEEN);
+    const Bitboard white_kings = pieces.at(WKING);
+
+    const Bitboard black_pawns = pieces.at(BPAWN);
+    const Bitboard black_knights = pieces.at(BKNIGHT);
+    const Bitboard black_bishops = pieces.at(BBISHOP);
+    const Bitboard black_rooks = pieces.at(BROOK);
+    const Bitboard black_queens = pieces.at(BQUEEN);
+    const Bitboard black_kings = pieces.at(BKING);
+
+    const Bitboard square_mask = 1ULL << square_index;
 
     if (white_pawns & square_mask) {
         return make_pair(WPAWN, 1);
@@ -631,12 +897,13 @@ pair<Piece,uint8_t> Board::get_piece_at(int square_index) const {
     }
 }
 
+
 void Board::print_board() const {
     const char* piece_repr[13] = {".", "P", "N", "B", "R", "Q", "K", "p", "n", "b", "r", "q", "k"};
     for (int rank = 7; rank >= 0; --rank) {
         for (int file = 0; file < 8; ++file) {
             int square_index = rank * 8 + file;
-            Piece piece = get_piece_at(square_index).first;
+            Piece piece = get_piece_at(square_index, piece_bitboards).first;
             cout << piece_repr[piece] << " ";
         }
         cout << endl;
@@ -644,14 +911,63 @@ void Board::print_board() const {
 }
 
 // function used to sort moves to accelerate alpha beta pruning
-bool compareBySecond(const std::pair<uint16_t, uint8_t>& a, const std::pair<uint16_t, uint8_t>& b) const {
+bool Board::compareBySecond(const std::pair<uint16_t, uint8_t>& a, const std::pair<uint16_t, uint8_t>& b) {
     return a.second < b.second; 
 }
 
-int Board::evaluate() const {
-    return 0;
-}
 
-void Board::minimax(bool white, int alpha, int beta) const {
-    // minimax function
+pair<float, uint16_t> Board::minimax(bool white, float& alpha, float& beta, int depth, unordered_map<Piece, Bitboard> pieces) {
+
+    if (depth == 0){
+        auto eval_and_moves = generate_legal_moves_and_evaluate(white, pieces);
+        float eval = eval_and_moves.second;
+        uint16_t sub = 0;
+        return make_pair(eval, sub);
+    }
+
+    if (white) { // Maximising value
+        float maxEval = numeric_limits<float>::lowest();
+        uint16_t takenMove;
+        auto eval_and_moves = generate_legal_moves_and_evaluate(true, pieces);
+        vector<pair<uint16_t, uint8_t>> moves = eval_and_moves.first;
+        sort(moves.begin(), moves.end(), Board::compareBySecond);
+
+        for (auto move : moves) {
+            unordered_map<Piece, Bitboard> npieces = make_move(move.first, pieces);
+            auto eval_and_move = minimax(false, alpha, beta, depth-1, npieces);
+            float eval = eval_and_move.first;
+            maxEval = max(maxEval, eval);
+            if (maxEval == eval) {
+                takenMove = move.first;
+            }
+            alpha = max(alpha, eval);
+            if (beta <= alpha) {
+                break;
+            }
+        }
+        return make_pair(maxEval, takenMove);
+
+    } else { // Minimising value
+        float minEval = numeric_limits<float>::max();
+        uint16_t takenMove;
+        auto eval_and_moves = generate_legal_moves_and_evaluate(false, pieces);
+        vector<pair<uint16_t, uint8_t>> moves = eval_and_moves.first;
+        sort(moves.begin(), moves.end(), Board::compareBySecond);
+
+        for (auto move : moves) {
+            unordered_map<Piece, Bitboard> npieces = make_move(move.first, pieces);
+            auto eval_and_move = minimax(true, alpha, beta, depth-1, npieces);
+            float eval = eval_and_move.first;
+            minEval = min(minEval, eval);
+            if (minEval == eval) {
+                takenMove = move.first;
+            }
+            beta = min(alpha, eval);
+            if (beta <= alpha) {
+                break;
+            }
+        }
+        return make_pair(minEval, takenMove);
+    }
+
 }
