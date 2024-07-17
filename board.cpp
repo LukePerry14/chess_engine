@@ -10,36 +10,62 @@
 typedef uint64_t Bitboard;
 using namespace std;
 
-Board::Board() {
+Board::Board(int maxDepth) {
+    this->maxDepth = maxDepth;
     // Initialize bitboards for starting position
-    black_pawns   = 0b0000000011111111000000000000000000000000000000000000000000000000;
-    black_knights = 0b0100001000000000000000000000000000000000000000000000000000000000;
-    black_bishops = 0b0010010000000000000000000000000000000000000000000000000000000000;
-    black_rooks   = 0b1000000100000000000000000000000000000000000000000000000000000000;
-    black_queens  = 0b0000100000000000000000000000000000000000000000000000000000000000;
-    black_kings   = 0b0001000000000000000000000000000000000000000000000000000000000000;
-    white_pawns   = 0b0000000000000000000000000000000000000000000000001111111100000000;
-    white_knights = 0b0000000000000000000000000000000000000000000000000000000001000010;
-    white_bishops = 0b0000000000000000000000000000000000000000000000000000000000100100;
-    white_rooks   = 0b0000000000000000000000000000000000000000000000000000000010000001;
-    white_queens  = 0b0000000000000000000000000000000000000000000000000000000000001000;
-    white_kings   = 0b0000000000000000000000000000000000000000000000000000000000010000;
-    whiteTurn = true;
-    maxDepth = 5;
-
+    piece_bitboards = {
+        {WPAWN,   0b0000000000000000000000000000000000000000000000001111111100000000},
+        {WKNIGHT, 0b0000000000000000000000000000000000000000000000000000000001000010},
+        {WBISHOP, 0b0000000000000000000000000000000000000000000000000000000000100100},
+        {WROOK,   0b0000000000000000000000000000000000000000000000000000000010000001},
+        {WQUEEN,  0b0000000000000000000000000000000000000000000000000000000000001000},
+        {WKING,   0b0000000000000000000000000000000000000000000000000000000000010000},
+        {BPAWN,   0b0000000011111111000000000000000000000000000000000000000000000000},
+        {BKNIGHT, 0b0100001000000000000000000000000000000000000000000000000000000000},
+        {BBISHOP, 0b0010010000000000000000000000000000000000000000000000000000000000},
+        {BROOK,   0b1000000100000000000000000000000000000000000000000000000000000000},
+        {BQUEEN,  0b0000100000000000000000000000000000000000000000000000000000000000},
+        {BKING,   0b0001000000000000000000000000000000000000000000000000000000000000}
+    };
+    cout << "Generating knight moves..." << endl;
     knight_move_masks = generate_knight_moves();
+
+    cout << "Generating bishop moves..." << endl;
     bishop_move_masks = generate_bishop_moves();
+
+    cout << "Generating rook moves..." << endl;
     rook_move_masks = generate_rook_moves();
+
+    cout << "Generating queen moves..." << endl;
     for (int t = 0; t < 64; t++) {
         queen_move_masks.push_back(rook_move_masks[t] | bishop_move_masks[t]);
     }
+
+    cout << "Generating king moves..." << endl;
     king_move_masks = generate_king_moves();
 
+    cout << "Board initialized successfully." << endl << endl;;
+}
+
+pair<bool,vector<pair<uint16_t, uint8_t>>> Board::move_recommendation(bool white) {
+    auto t = generate_legal_moves_and_evaluate(white, piece_bitboards);
+    float val = t.second;
+    if (val == numeric_limits<float>::lowest()) {
+        cout << "Black wins" << endl;
+        make_pair(false, t.first);
+    } else if (val == numeric_limits<float>::max()) {
+        cout << "White wins" << endl;
+        make_pair(false, t.first);
+    }
     float alpha = numeric_limits<float>::lowest();
     float beta = numeric_limits<float>::max();
-    auto ret = minimax(true, alpha, beta, maxDepth, piece_bitboards);
-    cout << ret.first << endl;
-    cout << bitset<16>(ret.second) << endl;
+    auto x = minimax(white, alpha, beta, maxDepth, piece_bitboards);
+
+    string colour = white? "white" : "black";
+
+    cout << colour << " recommendation: " << (x.second & 0xFF) << ":" << ((x.second >> 8) & 0xFF) << " - Score: " << x.first << endl;
+
+    return make_pair(true, t.first);
 }
 
 pair<vector<pair<uint16_t, uint8_t>>, float> Board::generate_legal_moves_and_evaluate(bool white, unordered_map<Piece, Bitboard> pieces) {
@@ -147,7 +173,7 @@ pair<vector<pair<uint16_t, uint8_t>>, float> Board::generate_legal_moves_and_eva
             int before_moves = white_moves.size();
             king_moves(white_moves, pos, true, own_pieces, pieces);
             int after_moves = white_moves.size();
-            if (after_moves - before_moves == 0) {
+            if (is_square_attacked(pos, true, pieces) && (after_moves - before_moves == 0)) {
                 score = numeric_limits<float>::lowest();
                 break;
             }
@@ -223,7 +249,7 @@ pair<vector<pair<uint16_t, uint8_t>>, float> Board::generate_legal_moves_and_eva
             king_moves(black_moves, pos, false, own_pieces, pieces);
             int after_moves = black_moves.size();
             
-            if (after_moves - before_moves == 0) {
+            if (is_square_attacked(pos, false, pieces) && (after_moves - before_moves == 0)) {
                 score = numeric_limits<float>::lowest();
                 break;
             }
@@ -578,7 +604,7 @@ void Board::king_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, bool wh
     // Check and add castling moves if valid
     if (white && pos == 4) { // White king on e1
         // Castling kingside
-        if (white_rooks & (1ULL << 7)) {
+        if (pieces[WROOK] & (1ULL << 7)) {
             if (!(own_pieces & (1ULL << 5)) && !(own_pieces & (1ULL << 6))) {
                 bool is_valid_castle = true;
                 for (int i = 4; i <= 6; ++i) {
@@ -593,7 +619,7 @@ void Board::king_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, bool wh
             }
         }
         // Castling queenside
-        if ((white_rooks & (1ULL << 0))) {
+        if ((pieces[WROOK] & (1ULL << 0))) {
             if (!(own_pieces & (1ULL << 1)) && !(own_pieces & (1ULL << 2)) && !(own_pieces & (1ULL << 3))) {
                 bool is_valid_castle = true;
                 for (int i = 2; i <= 4; ++i) {
@@ -609,7 +635,7 @@ void Board::king_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, bool wh
         }
     } else if (!white && pos == 60) { // Black king on e8
         // Castling kingside
-        if ((black_rooks & (1ULL << 63))) {
+        if ((pieces[BROOK] & (1ULL << 63))) {
             if (!(own_pieces & (1ULL << 61)) && !(own_pieces & (1ULL << 62))) {
                 bool is_valid_castle = true;
                 for (int i = 60; i <= 62; ++i) {
@@ -624,7 +650,7 @@ void Board::king_moves(vector<pair<uint16_t, uint8_t>>& moves, int& pos, bool wh
             }
         }
         // Castling queenside
-        if ((black_rooks & (1ULL << 56))) {
+        if ((pieces[BROOK] & (1ULL << 56))) {
             if (!(own_pieces & (1ULL << 59)) && !(own_pieces & (1ULL << 58)) && !(own_pieces & (1ULL << 57))) {
                 bool is_valid_castle = true;
                 for (int i = 58; i <= 60; ++i) {
@@ -851,6 +877,27 @@ unordered_map<Piece, Bitboard> Board::make_move(const uint16_t& move, unordered_
     return pieces;
 }
 
+void Board::make_move(const uint16_t& move) {
+    Bitboard startingPos = 1ULL << (move & 0xFF);
+    Bitboard endingPos = 1ULL << ((move >> 8) & 0xFF);
+
+    Piece startPiece = get_piece_at(move & 0xFF, piece_bitboards).first;
+    Piece endPiece = get_piece_at((move >> 8) & 0xFF, piece_bitboards).first;
+
+    if (endPiece == EMPTY) {
+        Bitboard& capturing = piece_bitboards[startPiece];
+        capturing ^= startingPos;
+        capturing ^= endingPos;
+    } else {
+        Bitboard& captured = piece_bitboards[endPiece];
+        captured ^= endingPos;
+
+        Bitboard& capturing = piece_bitboards[startPiece];
+        capturing ^= startingPos;
+        capturing ^= endingPos;
+    }
+}
+
 pair<Piece, uint8_t> Board::get_piece_at(int square_index, const unordered_map<Piece, Bitboard>& pieces) const {
     const Bitboard white_pawns = pieces.at(WPAWN);
     const Bitboard white_knights = pieces.at(WKNIGHT);
@@ -897,7 +944,6 @@ pair<Piece, uint8_t> Board::get_piece_at(int square_index, const unordered_map<P
     }
 }
 
-
 void Board::print_board() const {
     const char* piece_repr[13] = {".", "P", "N", "B", "R", "Q", "K", "p", "n", "b", "r", "q", "k"};
     for (int rank = 7; rank >= 0; --rank) {
@@ -914,7 +960,6 @@ void Board::print_board() const {
 bool Board::compareBySecond(const std::pair<uint16_t, uint8_t>& a, const std::pair<uint16_t, uint8_t>& b) {
     return a.second < b.second; 
 }
-
 
 pair<float, uint16_t> Board::minimax(bool white, float& alpha, float& beta, int depth, unordered_map<Piece, Bitboard> pieces) {
 

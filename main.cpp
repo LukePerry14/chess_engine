@@ -2,197 +2,73 @@
 #include <array>
 #include <vector>
 #include <utility>
+#include <sstream>
 #include <variant>
+#include <type_traits>
 #include "board.h"
-#include "moveValidationFunctions.h"
 
 using namespace std;
 
-void printBoard(char (&board)[8][8]) {
-    cout << endl;
-    for (int i = 0; i < 8; ++i) {
-        cout << 8 - i << "| ";
-        for (int j = 0; j < 8; ++j) {
-            cout << board[i][j] << " ";
-        }
-        cout << endl;
-    }
-    cout << " └________________" << endl;
-    cout << "   a b c d e f g h" << endl << endl;
-}
-
-array<int, 4> positionToIndices(const string& move) {
-    int startRow = 8 - (move[1] - '0');
-    int startCol = move[0] - 'a';
-    int endRow = 8 - (move[3] - '0');
-    int endCol = move[2] - 'a';
+uint16_t encode_numbers_to_16bit(int num1, int num2) {
     
-    return {startRow, startCol, endRow, endCol};
+    uint16_t encoded_value = (static_cast<uint16_t>(num2) << 8) | static_cast<uint16_t>(num1);
+    
+    return encoded_value;
 }
 
-bool validMove(const string& move, char (&board)[8][8], bool white, bool& unwon) {
-
-    vector<array<int, 2>> attackVector;
-    string checkMessage = "";
-
-    // Check for correct syntax
-    if (move.length() != 4) {
-        cout << "Invalid move syntax" << endl;
-        return false;
-    }
-    for (int x = 0; x < 4; x++) {
-        if (x % 2 == 0) {
-            if (!(96 < move[x] && move[x] < 105)) {
-                cout << "Invalid move syntax" << endl;
-                return false;
-            }
-        } else if (!(48 < move[x] && move[x] < 57)) {
-            cout << "Invalid move syntax" << endl;
-            return false;
-        }
-    }
-
-    // Discover selected piece
-    array<int, 4> posIndices = positionToIndices(move);
-    char piece = board[posIndices[0]][posIndices[1]];
-
-    // Check correct colour piece is being moved
-    if (!(white ? isupper(piece) : islower(piece))) {
-        cout << "Wrong colour piece chosen" << endl;
-        return false;
-    }
-
-    bool check = false;
-
-    // Handle validation for piece type
-    switch (piece) {
-        case 'P': // White pawn
-            if (!validateWhitePawnMove(board, posIndices)) {
-                cout << "Invalid move for white pawn" << endl;
-                return false;
-            }
-            attackVector = checkCheck(board, posIndices, piece);
-            if (!attackVector.empty()) {
-                check = true;
-                checkMessage = "Pawn checks black king";
-            }
-            break;
-        case 'p': // Black pawn
-            if (!validateBlackPawnMove(board, posIndices)) {
-                cout << "Invalid move for black pawn" << endl;
-                return false;
-            }
-            attackVector = checkCheck(board, posIndices, piece);
-            if (!attackVector.empty()) {
-                check = true;
-                checkMessage = "Pawn checks white king";
-            }
-            break;
-        case 'R':
-        case 'r':
-            if (!validateRookMove(board, posIndices)) {
-                cout << "Invalid move for rook" << endl;
-                return false;
-            }
-            attackVector = checkCheck(board, posIndices, piece);
-            if (!attackVector.empty()) {
-                check = true;
-                checkMessage = "Rook checks king";
-            }
-            break;
-        case 'N':
-        case 'n':
-            if (!validateKnightMove(board, posIndices)) {
-                cout << "Invalid move for knight" << endl;
-                return false;
-            }
-            attackVector = checkCheck(board, posIndices, piece);
-            if (!attackVector.empty()) {
-                check = true;
-                checkMessage = "Knight checks king";
-            }
-            break;
-        case 'B':
-        case 'b':
-            if (!validateBishopMove(board, posIndices)) {
-                cout << "Invalid move for bishop" << endl;
-                return false;
-            }
-            attackVector = checkCheck(board, posIndices, piece);
-            if (!attackVector.empty()) {
-                check = true;
-                checkMessage = "Bishop checks king";
-            }
-            break;
-        case 'Q':
-        case 'q':
-            if (!validateQueenMove(board, posIndices)) {
-                cout << "Invalid move for queen" << endl;
-                return false;
-            }
-            attackVector = checkCheck(board, posIndices, piece);
-            if (!attackVector.empty()) {
-                check = true;
-                checkMessage = "Queen checks king";
-            }
-            break;
-        case 'K':
-        case 'k':
-            if (!validateKingMove(board, posIndices)) {
-                cout << "Invalid move for king" << endl;
-                return false;
-            }
-            break;
-        default:
-            cout << "Invalid chosen piece" << endl;
-            return false;
-    }
-
-    // Swap pieces
-    board[posIndices[2]][posIndices[3]] = board[posIndices[0]][posIndices[1]];
-    board[posIndices[0]][posIndices[1]] = '.';
-
-    // Check win condition
-    if (check) {
-        if (checkMate(board, attackVector, findOpposingKing(board, white))) {
-            cout << "Checkmate" << endl;
-            unwon = false;
+int main(int argc, char *argv[]) {
+    int maxDepth = 10;
+    if (argc != 1){
+        if (argc != 2) {
+            cout << "Invalid number of arguments" << endl;
+            cout << "Exiting..." << endl;
+            return 0;
         } else {
-            cout << checkMessage << endl;
+            try {
+                maxDepth = std::stoi(argv[1]);
+            } catch (const std::invalid_argument& ia) {
+                cerr << "Invalid argument type" << endl;
+                cout << "Exiting..." << endl;
+                return 1;
+            } catch (const std::out_of_range& oor) {
+                cerr << "Argument out of range" << endl;
+                cout << "Exiting..." << endl;
+                return 1;
+            }
         }
     }
+    Board board(maxDepth);
+    bool whiteTurn = true;
 
-    return true;
-}
+    while (true) {
+        board.print_board();
+        auto values = board.move_recommendation(whiteTurn);
 
-int main() {
-    // char board[8][8] = {
-    //     {'r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'},
-    //     {'p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'},
-    //     {'.', '.', '.', '.', '.', '.', '.', '.'},
-    //     {'.', '.', '.', '.', '.', '.', '.', '.'},
-    //     {'.', '.', '.', '.', '.', '.', '.', '.'},
-    //     {'.', '.', '.', '.', '.', '.', '.', '.'},
-    //     {'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'},
-    //     {'R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'}
-    // };
-    
-    // bool unwon = true;
-    // string move;
-    // bool white = true;
-    // while(unwon) {
-    //     printBoard(board);
+        if (!(values.first)) {
+            break;
+        }
+        string colour = whiteTurn? "white" : "black";
 
-    //     do {
-    //         cout << "Enter your move: ";
-    //         cin >> move;
-    //     } while (!validMove(move, board, white, unwon)); // Validates move and updates board if valid
-    //     white = !white;
-    // }
+        int num1 = -1;
+        int num2 = -1;
+        uint16_t move;
 
-    // cout << "Game Over" << endl;
+        while (num1 < 0 || num1 > 63 || num2 < 0 || num2 > 63) {
+            cout << colour << " move: ";
+            string input;
+            getline(cin, input);
+            stringstream ss(input);
+            ss >> num1 >> num2;
+        }
 
-    Board board;
+        try {
+            move = encode_numbers_to_16bit(num1, num2);
+        } catch (const invalid_argument& e) {
+            cerr << "Error: " << e.what() << endl;
+        }   
 
+        board.make_move(move);
+        whiteTurn = not whiteTurn;
+    }
     return 0;
 }
